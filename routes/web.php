@@ -25,6 +25,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/moods', [MoodController::class, 'index'])->name('moods.index');
     Route::post('/moods', [MoodController::class, 'store'])->name('moods.store');
     Route::get('/moods/history', [MoodController::class, 'history'])->name('moods.history');
+    Route::get('/dash', [MoodController::class, 'mooddash'])->name('moods.dash');
 });
 
 
