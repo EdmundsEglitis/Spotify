@@ -1,19 +1,12 @@
 <?php
 
-
 namespace App\Http\Controllers;
 
-use App\Http\Requests\ProfileUpdateRequest;
-use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Illuminate\Http\RedirectResponse;
+use App\Models\MoodHistory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Redirect;
-use Illuminate\Support\Facades\Log;
-use Inertia\Inertia;
-use Inertia\Response;
-use App\Models\MoodHistory;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class MoodController extends Controller
 {
@@ -22,10 +15,9 @@ class MoodController extends Controller
         return view("/moods/index");
     }
 
-    // Redirect to Spotify authorization
     public function redirectToSpotify()
     {
-         $query = http_build_query([
+        $query = http_build_query([
             'client_id' => env('SPOTIFY_CLIENT_ID'),
             'response_type' => 'code',
             'redirect_uri' => env('SPOTIFY_REDIRECT_URI'),
@@ -35,150 +27,174 @@ class MoodController extends Controller
         return redirect('https://accounts.spotify.com/authorize?' . $query);
     }
 
-    // Handle the Spotify callback and get the access token
     public function handleSpotifyCallback(Request $request)
-{
-    $code = $request->input('code');
+    {
+        $code = $request->input('code');
 
-    // Make a POST request to Spotify's token endpoint
-    $response = Http::asForm()->post('https://accounts.spotify.com/api/token', [
-        'grant_type' => 'authorization_code',
-        'code' => $code,
-        'redirect_uri' => env('SPOTIFY_REDIRECT_URI'),
-        'client_id' => env('SPOTIFY_CLIENT_ID'),
-        'client_secret' => env('SPOTIFY_CLIENT_SECRET'),
-    ]);
-
-    // Check if the response is successful
-    if ($response->successful
-    ()) {
-        // Decode the response body and get the access token
-        $accessToken = $response->json()['access_token'] ?? null;
-
-        if ($accessToken) {
-            session(['spotify_access_token' => $accessToken]);
-        }
-    }
-
-    // Redirect to the moods index route after storing the token
-    return redirect()->route('moods.index');
-}
-
-    // Store the mood and get playlist recommendations
-// Store the mood and get playlist recommendations
-public function store(Request $request)
-{
-    $request->validate([
-        'mood' => 'required|string',
-    ]);
-
-    $mood = $request->input('mood');
-    
-    // Get Spotify recommendations based on the mood
-    $spotifyData = $this->getSpotifyRecommendations($mood);
-    dd($spotifyData);
-    // Default to '#' if no playlist URL is found
-    $playlistUrl = '#';
-
-    // Check if we have valid data in the response
-    if (isset($spotifyData['tracks'][0]['external_urls']['spotify'])) {
-        $playlistUrl = $spotifyData['tracks'][0]['external_urls']['spotify'];
-    }
-
-    // Log the playlist URL for debugging
-    Log::debug('Playlist URL', ['playlist_url' => $playlistUrl]);
-
-    // Save the mood and playlist URL to the database
-    MoodHistory::create([
-        'user_id' => auth()->id(),
-        'mood' => $mood,
-        'playlist_url' => $playlistUrl,
-    ]);
-
-    // Redirect to the history page with a success message
-    return redirect()->route('moods.history')->with('success', 'Playlist recommended!');
-}
-
-// Helper function to get Spotify recommendations based on mood
-private function getSpotifyRecommendations($mood)
-{
-    // Get the access token from the session
-    $accessToken = session('spotify_access_token');
-
-    // Check if the access token is present
-    if (!$accessToken) {
-        dd('Spotify access token is missing.');
-    }
-
-    // Define a mapping of moods to genres (with valid genres)
-    $moodGenreMap = [
-        'happy' => 'pop',           // Use 'pop' for happy mood
-        'sad' => 'acoustic',        // Use 'acoustic' for sad mood
-        'energetic' => 'rock',      // Use 'rock' for energetic mood
-        'calm' => 'jazz',           // Use 'jazz' for calm mood
-    ];
-
-    // Map the mood to a genre, default to 'pop' if mood is not found
-    $genre = $moodGenreMap[strtolower($mood)] ?? 'pop';
-
-
-
-    // Make the request to the Spotify API for recommendations
-    try {
-        $response = Http::withHeaders([
-            'Authorization' => 'Bearer ' . $accessToken, // Use the token here
-        ])->get('https://api.spotify.com/v1/recommendations', [
-            'seed_genres' => $genre, // Pass the genre as a seed
-            'limit' => 5, // Limit the number of recommendations
+        $response = Http::asForm()->post('https://accounts.spotify.com/api/token', [
+            'grant_type' => 'authorization_code',
+            'code' => $code,
+            'redirect_uri' => env('SPOTIFY_REDIRECT_URI'),
+            'client_id' => env('SPOTIFY_CLIENT_ID'),
+            'client_secret' => env('SPOTIFY_CLIENT_SECRET'),
         ]);
-        
 
-        // Dump the response status and body for debugging
-        dd('Spotify API Response:', $response->status(), $response->body());
-
-        // Check if the request was successful (HTTP 200)
         if ($response->successful()) {
-            $data = $response->json();
+            $accessToken = $response->json()['access_token'] ?? null;
 
-            // Dump the response data to see what we got from Spotify
-            dd('Response Data:', $data);
-
-            // Check if the data contains tracks
-            if (isset($data['tracks']) && count($data['tracks']) > 0) {
-                return $data; // Return the tracks data if available
-            } else {
-                dd('No tracks found in the response.');
-                return []; // Return empty if no tracks found
+            if ($accessToken) {
+                session(['spotify_access_token' => $accessToken]);
             }
-        } else {
-            dd('Failed to fetch Spotify recommendations. Response:', $response->status(), $response->body());
-            return []; // Return empty if the request failed
         }
 
-    } catch (\Exception $e) {
-        // Dump the exception if there's an error with the request
-        dd('Error during Spotify API request:', $e->getMessage());
-        return []; // Return empty if there's an exception
+        return redirect()->route('moods.index');
     }
-}
 
+    public function store(Request $request)
+    {
+        $request->validate([
+            'mood' => 'required|string',
+        ]);
 
+        // Detect mood either via form input or using Azure Face API
+        $mood = $request->input('mood') ?? $this->detectEmotionFromAzure($request);
 
+        // If no mood is detected, use a default one
+        $mood = $mood ?? 'neutral';
 
-    // Display the user's mood and playlist history
+        // Fetch Spotify recommendations based on the detected mood
+        $spotifyData = $this->getSpotifyRecommendations($mood);
+        
+        $playlistUrl = $spotifyData;
+
+        if (isset($spotifyData['tracks'][0]['external_urls']['spotify'])) {
+            $playlistUrl = $spotifyData['tracks'][0]['external_urls']['spotify'];
+        }
+
+        Log::debug('Playlist URL', ['playlist_url' => $playlistUrl]);
+
+        MoodHistory::create([
+            'user_id' => auth()->id(),
+            'mood' => $mood,
+            'playlist_url' => $playlistUrl,
+        ]);
+
+        return redirect()->route('moods.history')->with('success', 'Playlist recommended!');
+    }
+
+    private function getSpotifyRecommendations($mood)
+    {
+        // Hardcoded playlists for a wide range of emotions
+        $moodPlaylistMap = [
+            'happy' => 'https://open.spotify.com/playlist/37i9dQZF1DXdPec7aLTmlC',      // Happy Vibes Playlist
+            'sad' => 'https://open.spotify.com/playlist/37i9dQZF1DWVV27DiNWxkR',        // Sad Songs Playlist
+            'angry' => 'https://open.spotify.com/playlist/37i9dQZF1DWY6UWUOwj4BO',      // Angry Metal Playlist
+            'bored' => 'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M',      // Chill Hits Playlist
+            'energetic' => 'https://open.spotify.com/playlist/37i9dQZF1DX76Wlfdnj7AP',  // Workout Playlist
+            'calm' => 'https://open.spotify.com/playlist/37i9dQZF1DX2pSTOxoPbx9',       // Calm Vibes Playlist
+            'relaxed' => 'https://open.spotify.com/playlist/37i9dQZF1DWVLO2CENRWhZ',    // Relax & Unwind Playlist
+            'motivated' => 'https://open.spotify.com/playlist/37i9dQZF1DX76Wlfdnj7AP',  // Motivation Mix Playlist
+            'romantic' => 'https://open.spotify.com/playlist/37i9dQZF1DXb9rZ2GxztEJ',   // Love Songs Playlist
+            'nostalgic' => 'https://open.spotify.com/playlist/37i9dQZF1DWSqBruwoIXkA',  // Throwback Hits Playlist
+            'lonely' => 'https://open.spotify.com/playlist/37i9dQZF1DX7gIoKXt0gmx',     // Lonely Moments Playlist
+            'confident' => 'https://open.spotify.com/playlist/37i9dQZF1DX4qKWGR9z0LI',  // Confidence Boost Playlist
+            'focused' => 'https://open.spotify.com/playlist/37i9dQZF1DX8Uebhn9wzrS',    // Focus Flow Playlist
+            'stressed' => 'https://open.spotify.com/playlist/37i9dQZF1DWXe9gFZP0gtP',   // Stress Relief Playlist
+            'excited' => 'https://open.spotify.com/playlist/37i9dQZF1DX3rxVfibe1L0',    // Excited Pop Hits Playlist
+            'grateful' => 'https://open.spotify.com/playlist/37i9dQZF1DX8gDIpdqp1XJ',   // Gratitude Playlist
+            'mellow' => 'https://open.spotify.com/playlist/37i9dQZF1DWVmps5U8gHNv',     // Mellow Vibes Playlist
+            'uplifted' => 'https://open.spotify.com/playlist/37i9dQZF1DXdxcBWuJkbcy',   // Uplifting Pop Playlist
+            'melancholy' => 'https://open.spotify.com/playlist/37i9dQZF1DX9uKNf5jGX6m', // Melancholy Tunes Playlist
+            'peaceful' => 'https://open.spotify.com/playlist/37i9dQZF1DWUzFXarNiofw',   // Peaceful Piano Playlist
+            'fearful' => 'https://open.spotify.com/playlist/37i9dQZF1DX3SPKpXb5pVw',    // Dark and Fearful Playlist
+            'determined' => 'https://open.spotify.com/playlist/37i9dQZF1DX76Wlfdnj7AP', // Determination Playlist
+            'playful' => 'https://open.spotify.com/playlist/37i9dQZF1DXa2PvUpywmrr',    // Playful Pop Playlist
+            'inspired' => 'https://open.spotify.com/playlist/37i9dQZF1DX1s9knjP51Oa',   // Inspiration Mix Playlist
+            'frustrated' => 'https://open.spotify.com/playlist/37i9dQZF1DX6xZZEgC9Ubl', // Frustration Release Playlist
+            'curious' => 'https://open.spotify.com/playlist/37i9dQZF1DX2S1fGAdzHbA',    // Curious Sounds Playlist
+            'silly' => 'https://open.spotify.com/playlist/37i9dQZF1DWZwtERXCS82H',      // Silly & Fun Playlist
+        ];
+    
+        // Default playlist if mood is not recognized
+        return $moodPlaylistMap[strtolower($mood)] ?? 'https://open.spotify.com/playlist/37i9dQZF1DX4sWSpwq3LiO'; // Default Mood Playlist
+    }
+
+    // New method to detect emotion using Azure Face API
+    private function detectEmotionFromAzure(Request $request)
+    {
+        // Assuming you're sending a base64 image to detect the emotion
+        $imageData = $request->input('image'); // Base64 image data
+    
+        $apiKey = env('AZURE_FACE_API_KEY');
+        $apiEndpoint = env('AZURE_FACE_API_ENDPOINT');
+        
+        try {
+            $response = Http::withHeaders([
+                'Ocp-Apim-Subscription-Key' => $apiKey,
+                'Content-Type' => 'application/octet-stream',
+            ])->post($apiEndpoint, [
+                'body' => base64_decode($imageData),  // Ensure you're decoding the base64 data
+            ]);
+        
+            if ($response->successful()) {
+                $data = $response->json();
+                $emotion = $this->extractDominantEmotion($data);
+                return $emotion;
+            } else {
+                Log::error('Error detecting emotion from Azure API', ['response' => $response->body()]);
+                return null;
+            }
+        } catch (\Exception $e) {
+            Log::error('Error detecting emotion', ['error' => $e->getMessage()]);
+            return null;
+        }
+    }
+
+    // Helper method to extract the dominant emotion
+    private function extractDominantEmotion($data)
+    {
+        if (!isset($data[0]['faceAttributes']['emotion'])) {
+            return null;
+        }
+
+        $emotions = $data[0]['faceAttributes']['emotion'];
+        $dominantEmotion = array_keys($emotions, max($emotions))[0]; // Get the emotion with the highest score
+        
+        return $dominantEmotion;
+    }
+
+    public function getProfile()
+    {
+        $accessToken = session('spotify_access_token');
+
+        if (!$accessToken) {
+            return 'Access token is missing.';
+        }
+
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $accessToken,
+            ])->get('https://api.spotify.com/v1/me');
+
+            if ($response->successful()) {
+                $data = $response->json();
+                return $data;
+            } else {
+                return 'Failed to fetch profile. Status: ' . $response->status() . ', Error: ' . $response->body();
+            }
+        } catch (\Exception $e) {
+            return 'Error: ' . $e->getMessage();
+        }
+    }
+
     public function history()
     {
         $histories = MoodHistory::where('user_id', auth()->id())->latest()->get();
         return view('moods.history', compact('histories'));
-
     }
+
     public function mooddash()
     {
-        dd(session()->all());
         return view('moods.dash');
-
     }
-
-    // Get Spotify recommendations based on mood
-
 }
