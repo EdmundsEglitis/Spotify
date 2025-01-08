@@ -1,9 +1,14 @@
 <?php
 use App\Http\Controllers\MoodController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\FaceDetectionController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+
+
+
+
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -26,6 +31,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/moods', [MoodController::class, 'store'])->name('moods.store');
     Route::get('/moods/history', [MoodController::class, 'history'])->name('moods.history');
     Route::get('/dash', [MoodController::class, 'mooddash'])->name('moods.dash');
+
+    Route::post('/detect', [FaceDetectionController::class, 'detect'])->name('moods.detect');
+    Route::get('/camera', [FaceDetectionController::class, 'show'])->name('moods.show');
 });
 
 

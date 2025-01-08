@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\MoodHistory;
+use App\Models\History;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
@@ -51,20 +51,19 @@ class MoodController extends Controller
     }
 
     public function store(Request $request)
-    {
+    {   
+        dd($request);
         $request->validate([
             'mood' => 'required|string',
         ]);
 
         // Detect mood either via form input or using Azure Face API
-        $mood = $request->input('mood') ?? $this->detectEmotionFromAzure($request);
-
-        // If no mood is detected, use a default one
-        $mood = $mood ?? 'neutral';
+        $mood = $this->detectEmotionFromAzure($request);
+        dd($mood);
 
         // Fetch Spotify recommendations based on the detected mood
         $spotifyData = $this->getSpotifyRecommendations($mood);
-        
+        dd($spotifyData);   
         $playlistUrl = $spotifyData;
 
         if (isset($spotifyData['tracks'][0]['external_urls']['spotify'])) {
@@ -189,12 +188,14 @@ class MoodController extends Controller
 
     public function history()
     {
-        $histories = MoodHistory::where('user_id', auth()->id())->latest()->get();
+        $histories = History::where('user_id', auth()->id())->latest()->get();
         return view('moods.history', compact('histories'));
     }
 
     public function mooddash()
     {
+        
         return view('moods.dash');
+        
     }
 }

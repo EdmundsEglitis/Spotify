@@ -52,18 +52,68 @@
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             max-width: 600px;
         }
+                /* Navigation bar styles */
+                nav {
+            background-color: #1a1a1a;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        nav a {
+            text-decoration: none;
+            color: white;
+            font-size: 18px;
+            margin: 0 10px;
+            transition: color 0.3s;
+        }
+
+        nav a:hover {
+            color: #007bff;
+        }
+
+        nav ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+        }
+
+        nav li {
+            margin-left: 15px;
+        }
+
+        nav button {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        nav button:hover {
+            color: #007bff;
+        }
     </style>
 </head>
 <body>
 
-    <div class="navbar">
-    <a href="{{ route('moods.dash') }}" class="logo">MoodApp</a>
-        <div class="nav-links">
-            <a href="{{ route('moods.history') }}">Mood History</a>
-            <a href="{{ route('spotify.login') }}">Login with Spotify</a>
-            <a href="{{ route('moods.store') }}">Submit Mood</a>
-        </div>
-    </div>
+<nav>
+        <a href="{{ route('moods.show') }}" class="logo">Mood Detector</a>
+        <ul>
+            <li><a href="{{ route('moods.history') }}">Mood History</a></li>
+            <li><a href="{{ route('spotify.login') }}">Login with Spotify</a></li>
+            <li>
+                <form method="POST" action="{{ route('logout') }}" style="display: inline;">
+                    @csrf
+                    <button type="submit">Logout</button>
+                </form>
+            </li>
+        </ul>
+    </nav>
 
     <div class="container">
         <h2>Your Mood & Playlist History</h2>
